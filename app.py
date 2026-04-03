@@ -3,12 +3,32 @@ from ultralytics import YOLO
 import cv2
 import numpy as np
 from datetime import datetime
+import os
+import urllib.request
 
 app = Flask(__name__)
 
-print("📦 Loading YOLOv8 small model...")
+print("📦 Loading YOLOv8 small model (Base Tracker)...")
 model = YOLO("yolov8s.pt")
-print("✅ Model loaded successfully!")
+print("✅ Base Model loaded!")
+
+WEAPON_MODEL_PATH = "GunDetector.pt"
+if not os.path.exists(WEAPON_MODEL_PATH):
+    print("🔫 Downloading GunDetector weights from GitHub...")
+    try:
+        url = "https://github.com/Beastojenisto/WraponDetectionYOLOv8/raw/main/GunDetector.pt"
+        urllib.request.urlretrieve(url, WEAPON_MODEL_PATH)
+        print("✅ GunDetector downloaded!")
+    except Exception as e:
+        print(f"⚠️ Failed to download GunDetector: {e}")
+
+print("📦 Loading Weapon Detector model...")
+if os.path.exists(WEAPON_MODEL_PATH):
+    weapon_model = YOLO(WEAPON_MODEL_PATH)
+    print("✅ Weapon Model loaded!")
+else:
+    weapon_model = None
+    print("⚠️ Weapon Model unavailable.")
 
 CONFIDENCE_THRESHOLD = 0.40  
 SUSPICIOUS_OBJECTS = {
@@ -69,6 +89,16 @@ def detect_objects(frame_bytes):
         verbose=False  # Suppress console output per frame
     )
 
+    # --- PHASE 10: Weapon Detection Engine ---
+    weapon_results = []
+    if weapon_model:
+        weapon_results = weapon_model.predict(
+            source=frame,
+            conf=0.40,
+            verbose=False
+        )
+    # -----------------------------------------
+
     # Parse results
     all_detections = []
     suspicious_detected = []
@@ -117,6 +147,30 @@ def detect_objects(frame_bytes):
                 interest_detected.append(f"{label}: {confidence}")
             else:
                 detection["category"] = "other"
+
+    # --- PHASE 10: Merge Weapon Detections ---
+    for w_result in weapon_results:
+        w_boxes = w_result.boxes
+        if w_boxes is None or len(w_boxes) == 0: continue
+        
+        for i in range(len(w_boxes)):
+            class_id = int(w_boxes.cls[i].item())
+            class_name = weapon_model.names[class_id]  # e.g. "gun"
+            confidence = round(float(w_boxes.conf[i].item()), 4)
+            bbox = w_boxes.xyxy[i].tolist()
+            bbox = [round(c, 1) for c in bbox]
+
+            label = f"{class_name.upper()} (WEAPON)"
+            detection = {
+                "class": class_name,
+                "confidence": confidence,
+                "track_id": None, # Weapon detector doesn't track ID across frames
+                "category": "suspicious",
+                "bbox": {"x1": bbox[0], "y1": bbox[1], "x2": bbox[2], "y2": bbox[3]}
+            }
+            all_detections.append(detection)
+            suspicious_detected.append(f"{label}: {confidence}")
+    # -----------------------------------------
 
     # Determine threat level
     threat = len(suspicious_detected) > 0
@@ -208,13 +262,12 @@ def list_classes():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("🟡 EC2-3 — YOLO Object Detection Server")
+    print("🟡 EC2-3 — Dual-Model Object Detection Server")
     print("=" * 50)
     print(f"📡 Running on port 5003")
-    print(f"🧠 Model: YOLOv8 small (yolov8s.pt)")
-    print(f"🎯 Confidence threshold: {CONFIDENCE_THRESHOLD}")
-    print(f"🔴 Suspicious objects: {sorted(SUSPICIOUS_OBJECTS)}")
-    print(f"🟡 Objects of interest: {sorted(OBJECTS_OF_INTEREST)}")
+    print(f"🧠 Base Model: YOLOv8 small (yolov8s.pt)")
+    print(f"🔫 Weapon Model: GunDetector.pt")
+    print(f"🎯 Base Confidence: {CONFIDENCE_THRESHOLD}")
     print(f"🔗 POST /detect   → Send JPEG frame for object detection")
     print(f"🔗 GET  /health   → Health check")
     print(f"🔗 GET  /classes  → List all detectable classes")
