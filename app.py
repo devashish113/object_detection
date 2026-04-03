@@ -1,10 +1,3 @@
-"""
-EC2-3 — YOLO Object Detection Server
-Flask server running YOLOv8 nano model for detecting objects in surveillance frames.
-Flags suspicious objects (weapons, unattended bags) as threats.
-Runs on port 5003.
-"""
-
 from flask import Flask, request, jsonify
 from ultralytics import YOLO
 import cv2
@@ -13,15 +6,11 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# ─── Load YOLOv8 nano model (auto-downloads on first run) ───
 print("📦 Loading YOLOv8 nano model...")
 model = YOLO("yolov8n.pt")
 print("✅ Model loaded successfully!")
 
-# ─── Configuration ───
-CONFIDENCE_THRESHOLD = 0.40  # Minimum confidence to count a detection
-
-# Suspicious objects that trigger threat alerts
+CONFIDENCE_THRESHOLD = 0.40  
 SUSPICIOUS_OBJECTS = {
     "knife",
     "scissors",
@@ -31,7 +20,6 @@ SUSPICIOUS_OBJECTS = {
     "suitcase",
 }
 
-# Objects of interest (logged but not flagged as threat)
 OBJECTS_OF_INTEREST = {
     "person",
     "car",
@@ -73,9 +61,10 @@ def detect_objects(frame_bytes):
             "message": "Failed to decode frame"
         }
 
-    # Run YOLOv8 inference
-    results = model.predict(
+    # Run YOLOv8 inference with Tracking
+    results = model.track(
         source=frame,
+        persist=True,
         conf=CONFIDENCE_THRESHOLD,
         verbose=False  # Suppress console output per frame
     )
@@ -96,6 +85,10 @@ def detect_objects(frame_bytes):
             class_id = int(boxes.cls[i].item())
             class_name = model.names[class_id]
             confidence = round(float(boxes.conf[i].item()), 4)
+            
+            # Get Tracking ID
+            track_id = int(boxes.id[i].item()) if boxes.id is not None else None
+            label = f"{class_name} #{track_id}" if track_id is not None else class_name
 
             # Get bounding box coordinates (x1, y1, x2, y2)
             bbox = boxes.xyxy[i].tolist()
@@ -104,6 +97,7 @@ def detect_objects(frame_bytes):
             detection = {
                 "class": class_name,
                 "confidence": confidence,
+                "track_id": track_id,
                 "bbox": {
                     "x1": bbox[0],
                     "y1": bbox[1],
@@ -117,10 +111,10 @@ def detect_objects(frame_bytes):
             # Categorize detection
             if class_name in SUSPICIOUS_OBJECTS:
                 detection["category"] = "suspicious"
-                suspicious_detected.append(f"{class_name}: {confidence}")
+                suspicious_detected.append(f"{label}: {confidence}")
             elif class_name in OBJECTS_OF_INTEREST:
                 detection["category"] = "interest"
-                interest_detected.append(f"{class_name}: {confidence}")
+                interest_detected.append(f"{label}: {confidence}")
             else:
                 detection["category"] = "other"
 
