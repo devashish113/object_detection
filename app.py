@@ -6,8 +6,8 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-print("📦 Loading YOLOv8 nano model...")
-model = YOLO("yolov8n.pt")
+print("📦 Loading YOLOv8 small model...")
+model = YOLO("yolov8s.pt")
 print("✅ Model loaded successfully!")
 
 CONFIDENCE_THRESHOLD = 0.40  
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     print("🟡 EC2-3 — YOLO Object Detection Server")
     print("=" * 50)
     print(f"📡 Running on port 5003")
-    print(f"🧠 Model: YOLOv8 nano (yolov8n.pt)")
+    print(f"🧠 Model: YOLOv8 small (yolov8s.pt)")
     print(f"🎯 Confidence threshold: {CONFIDENCE_THRESHOLD}")
     print(f"🔴 Suspicious objects: {sorted(SUSPICIOUS_OBJECTS)}")
     print(f"🟡 Objects of interest: {sorted(OBJECTS_OF_INTEREST)}")
